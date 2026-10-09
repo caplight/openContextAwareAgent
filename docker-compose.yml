@@ -1,0 +1,17 @@
+version: "3.8"
+
+# Phase 1 最小依赖：只起 Qdrant（向量库）
+# Langfuse 自托管较重（需 postgres+clickhouse+redis 等），Phase 1 用 Cloud 免费 tier 或暂不启用
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: demo_qdrant
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:

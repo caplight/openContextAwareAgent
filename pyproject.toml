@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "enterprise-kb"
+version = "0.1.0"
+description = "企业知识库智能助手（RAG demo）—— 检索质量 / 成本控制 / 可观测"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "streamlit>=1.38",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    # RAG / 编排
+    "langgraph>=0.2",
+    "langchain>=0.3,<0.4",
+    "langchain-community>=0.3,<0.4",
+    "langchain-text-splitters>=0.3,<0.4",
+    # 向量库 + embedding
+    "qdrant-client>=1.11",
+    "sentence-transformers>=3.1",
+    # torch 显式声明（CPU 版，避免 sentence-transformers 传递依赖拉到 CUDA 版）
+    "torch>=2.2",
+    # 模型路由 + 可观测
+    "litellm>=1.49",
+    "langfuse>=2.52",
+    # 文档加载
+    "pypdf>=5.0",
+    "python-docx>=1.1",
+]
+
+[project.scripts]
+kb = "enterprise_kb.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+eval = [
+    "ragas>=0.2",
+    "datasets>=3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/enterprise_kb"]
+
+# torch 用 CPU 版（本运行环境无 GPU，避免下载 ~3G 的 CUDA 版）
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu" },
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
