@@ -7,7 +7,7 @@
 
 | # | KPI | 目标值 | 测量方法 | 当前状态 |
 |---|-----|--------|----------|----------|
-| 1 | 答案准确率 | ≥ 90% | RAGAS（faithfulness + answer relevancy） | ⏳ 待测（Phase 1 baseline） |
+| 1 | 答案准确率 | ≥ 90% | RAGAS（faithfulness + answer relevancy） | ⏳ faithfulness 90.25% 已达标 / context_precision 47.08% 待 Phase 2 优化 |
 | 2 | 单次查询 LLM 成本 | < $0.01 | LiteLLM token 用量 × 模型单价 | ✅ 初步满足（~600 completion tokens） |
 | 3 | P95 端到端延迟 | < 3s | Langfuse trace 计时 | ⏳ 待测 |
 | 4 | Graph-RAG 相对提升 | +15~20% | naive vs Graph-RAG 同集对比 | 🔜 Phase 2 |

@@ -50,6 +50,13 @@ class RetrievalConfig(BaseModel):
     chunk_overlap: int = 51
 
 
+class RerankerConfig(BaseModel):
+    """本地 bge-reranker-v2-m3 精排（cross-encoder）。"""
+
+    model: str = "BAAI/bge-reranker-v2-m3"
+    top_n: int = 20  # 混合检索先取 top-n 候选，reranker 再精排到 top_k
+
+
 class LangfuseConfig(BaseModel):
     """可观测（可选，未启用时静默跳过）。"""
 
@@ -71,6 +78,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingConfig = EmbeddingConfig()
     llm: LLMConfig = LLMConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
+    reranker: RerankerConfig = RerankerConfig()
     langfuse: LangfuseConfig = LangfuseConfig()
 
     # API key（仅环境变量注入，不落盘）

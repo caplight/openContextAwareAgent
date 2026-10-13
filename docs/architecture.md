@@ -61,8 +61,8 @@ fallback: deepseek/deepseek-flash（便宜，国内可直连）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
-| **Phase 1** | naive RAG 基线（向量检索 + LLM 生成） | ✅ 闭环跑通，剩 RAGAS baseline |
-| **Phase 2** | 混合检索（BM25+dense）+ Reranker + Graph-RAG（LightRAG） | 🔜 |
+| **Phase 1** | naive RAG 基线（向量检索 + LLM 生成） | ✅ 完成（含 RAGAS baseline，见 docs/evaluation/） |
+| **Phase 2** | 混合检索（BM25+dense）+ Reranker + Graph-RAG（LightRAG） | 🔜 进行中 |
 | **Phase 3** | 模拟 EKS backend + DevOps 助手（贴近求职方向） | 🔜 |
 
 ## 6. 关键设计决策
