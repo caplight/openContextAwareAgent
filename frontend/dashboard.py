@@ -6,26 +6,32 @@
 3. 成本 —— 累计成本（generate span 的 cost_details）
 
 数据源：自托管 Langfuse（REST API），每次点「刷新」拉最新 trace。
+支持中英双语切换（sidebar 顶部）。
 """
 
 import streamlit as st
 
 from enterprise_kb.observability import fetch_recent_metrics
+from locales import lang_selector, make_t
 
 st.set_page_config(page_title="RAG 可观测 Dashboard", page_icon="📊", layout="wide")
-st.title("📊 RAG 可观测 Dashboard")
-st.caption("数据源：自托管 Langfuse（trace / span / token / 延迟）")
 
-st.sidebar.header("⚙️ 控制")
-limit = st.sidebar.slider("拉取最近 N 条 trace", 5, 200, 50, step=5)
-if st.sidebar.button("🔄 刷新数据", use_container_width=True):
+lang = lang_selector()
+t = make_t(lang)
+
+st.title(t("dash_title"))
+st.caption(t("dash_caption"))
+
+st.sidebar.header(t("dash_sidebar_header"))
+limit = st.sidebar.slider(t("dash_limit_slider"), 5, 100, 50, step=5)
+if st.sidebar.button(t("dash_refresh"), use_container_width=True):
     st.rerun()
 
-with st.spinner("拉取 Langfuse trace…"):
+with st.spinner(t("dash_fetching")):
     metrics = fetch_recent_metrics(limit=limit)
 
 if not metrics:
-    st.info("暂无 trace 数据。先跑几个查询（`POST /query` 或 Q&A 界面），再回来点「刷新」。")
+    st.info(t("dash_no_data"))
     st.stop()
 
 total = len(metrics)
@@ -37,28 +43,28 @@ inp_tokens = sum(m["spans"].get("generate", {}).get("usage", {}).get("input", 0)
 out_tokens = sum(m["spans"].get("generate", {}).get("usage", {}).get("output", 0) for m in metrics)
 total_cost = sum(m["total_cost"] for m in metrics)
 
-c1.metric("总查询数", total)
-c2.metric("平均总延迟", f"{avg_latency:.2f}s")
-c3.metric("总 input tokens", f"{inp_tokens:,}")
-c4.metric("总 output tokens", f"{out_tokens:,}")
-c5.metric("累计成本", f"${total_cost:.6f}")
+c1.metric(t("metric_total_queries"), total)
+c2.metric(t("metric_avg_latency"), f"{avg_latency:.2f}s")
+c3.metric(t("metric_input_tokens"), f"{inp_tokens:,}")
+c4.metric(t("metric_output_tokens"), f"{out_tokens:,}")
+c5.metric(t("metric_total_cost"), f"${total_cost:.6f}")
 
 st.divider()
 
 # ---------- 2. 延迟分解表 ----------
-st.subheader("⏱️ 检索链路延迟分解")
+st.subheader(t("latency_breakdown"))
 rows = []
 for m in metrics:
     spans = m["spans"]
     rows.append(
         {
-            "query": (m["query"] or "")[:40],
-            "总延迟(s)": round(m["total_latency"], 3),
-            "retrieve(s)": round(spans.get("retrieve", {}).get("latency", 0), 3),
-            "rerank(s)": round(spans.get("rerank", {}).get("latency", 0), 3),
-            "generate(s)": round(spans.get("generate", {}).get("latency", 0), 3),
-            "模型": spans.get("generate", {}).get("model", ""),
-            "tokens": spans.get("generate", {}).get("usage", {}).get("total", 0),
+            t("col_query"): (m["query"] or "")[:40],
+            t("col_total_latency"): round(m["total_latency"], 3),
+            t("col_retrieve"): round(spans.get("retrieve", {}).get("latency", 0), 3),
+            t("col_rerank"): round(spans.get("rerank", {}).get("latency", 0), 3),
+            t("col_generate"): round(spans.get("generate", {}).get("latency", 0), 3),
+            t("col_model"): spans.get("generate", {}).get("model", ""),
+            t("col_tokens"): spans.get("generate", {}).get("usage", {}).get("total", 0),
         }
     )
 
@@ -68,35 +74,34 @@ try:
     df = pd.DataFrame(rows)
     st.dataframe(df, use_container_width=True, height=420)
 
-    # 延迟分布条形图（用 pandas 直接画太丑，改用简单文本/表格）
-    st.subheader("📈 各环节平均延迟")
-    avg_retrieve = sum(r["retrieve(s)"] for r in rows) / total
-    avg_rerank = sum(r["rerank(s)"] for r in rows) / total
-    avg_generate = sum(r["generate(s)"] for r in rows) / total
+    st.subheader(t("avg_latency_chart"))
+    avg_retrieve = sum(m["spans"].get("retrieve", {}).get("latency", 0) for m in metrics) / total
+    avg_rerank = sum(m["spans"].get("rerank", {}).get("latency", 0) for m in metrics) / total
+    avg_generate = sum(m["spans"].get("generate", {}).get("latency", 0) for m in metrics) / total
     chart = pd.DataFrame(
         {
-            "环节": ["retrieve", "rerank", "generate"],
-            "平均延迟(s)": [round(avg_retrieve, 3), round(avg_rerank, 3), round(avg_generate, 3)],
+            t("col_stage"): ["retrieve", "rerank", "generate"],
+            t("col_avg_latency"): [round(avg_retrieve, 3), round(avg_rerank, 3), round(avg_generate, 3)],
         }
     )
-    st.bar_chart(chart.set_index("环节"))
+    st.bar_chart(chart.set_index(t("col_stage")))
 except ImportError:
-    st.warning("未安装 pandas，跳过表格展示")
+    st.warning("pandas not installed, skipping table/chart")
     for r in rows:
         st.write(r)
 
 st.divider()
 
 # ---------- 3. 查询历史 ----------
-st.subheader("💬 最近查询")
+st.subheader(t("recent_queries"))
 for m in list(reversed(metrics))[:10]:
-    label = (m["query"] or "(无 query)")[:60]
+    label = (m["query"] or t("no_query"))[:60]
     with st.expander(f"Q: {label}  ·  {m['total_latency']:.2f}s"):
-        st.markdown(f"**A:** {(m['answer'] or '')[:500]}")
+        st.markdown(f"**{t('answer_prefix')}** {(m['answer'] or '')[:500]}")
         g = m["spans"].get("generate", {})
         st.caption(
-            f"模型 {g.get('model', '?')} · "
-            f"tokens {g.get('usage', {}).get('total', 0)} · "
+            f"{t('col_model')} {g.get('model', '?')} · "
+            f"{t('col_tokens')} {g.get('usage', {}).get('total', 0)} · "
             f"retrieve {m['spans'].get('retrieve', {}).get('latency', 0):.2f}s / "
             f"rerank {m['spans'].get('rerank', {}).get('latency', 0):.2f}s / "
             f"generate {g.get('latency', 0):.2f}s"

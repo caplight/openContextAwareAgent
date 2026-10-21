@@ -17,12 +17,19 @@ logger = get_logger(__name__)
 
 @dataclass
 class LLMResult:
-    """一次 LLM 调用的结果（含用量，供可观测/成本追踪）。"""
+    """一次 LLM 调用的结果（含用量 + 成本，供可观测/成本追踪）。"""
 
     content: str
     model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    input_cost: float = 0.0  # 输入成本（美元）
+    output_cost: float = 0.0  # 输出成本（美元）
+
+    @property
+    def cost(self) -> float:
+        """总成本（美元）。"""
+        return self.input_cost + self.output_cost
 
 
 def _setup_keys() -> None:
@@ -63,7 +70,14 @@ def generate(messages: list[dict], model: str | None = None) -> LLMResult:
                 prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
                 completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
             )
-            logger.debug("LLM 调用成功 model=%s tokens=%s", m, result.completion_tokens)
+            # 用 litellm cost map 算成本（token × 单价，input/output 分开）；失败则置 0，不影响主流程
+            try:
+                info = litellm.get_model_info(m)
+                result.input_cost = float(info.get("input_cost_per_token", 0) or 0) * result.prompt_tokens
+                result.output_cost = float(info.get("output_cost_per_token", 0) or 0) * result.completion_tokens
+            except Exception as e:  # noqa: BLE001
+                logger.debug("成本计算失败 model=%s err=%s", m, e)
+            logger.debug("LLM 调用成功 model=%s tokens=%s cost=%s", m, result.completion_tokens, result.cost)
             return result
         except Exception as e:  # noqa: BLE001
             last_err = e

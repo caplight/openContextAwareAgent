@@ -30,6 +30,7 @@ class RAGState(TypedDict, total=False):
     model: str
     prompt_tokens: int
     completion_tokens: int
+    cost: float
 
 
 def retrieve_node(state: RAGState) -> dict:
@@ -58,12 +59,14 @@ def generate_node(state: RAGState) -> dict:
                 output={"answer": result.content},
                 model=result.model,
                 usage_details={"input": result.prompt_tokens, "output": result.completion_tokens},
+                cost_details={"input": result.input_cost, "output": result.output_cost, "total": result.cost},
             )
         return {
             "answer": result.content,
             "model": result.model,
             "prompt_tokens": result.prompt_tokens,
             "completion_tokens": result.completion_tokens,
+            "cost": result.cost,
         }
 
 

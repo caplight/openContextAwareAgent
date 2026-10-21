@@ -8,8 +8,8 @@
 | # | KPI | 目标值 | 测量方法 | 当前状态 |
 |---|-----|--------|----------|----------|
 | 1 | 答案准确率 | ≥ 90% | RAGAS（faithfulness + answer relevancy） | ✅ faithfulness 96.92%（hybrid+rerank，golden corpus）/ context_precision 57.33% |
-| 2 | 单次查询 LLM 成本 | < $0.01 | LiteLLM token 用量 × 模型单价 | ✅ 初步满足（~600 completion tokens） |
-| 3 | P95 端到端延迟 | < 3s | Langfuse trace 计时 | ⏳ 冷启动实测 36.5s（含模型加载）；热查询待测 |
+| 2 | 单次查询 LLM 成本 | < $0.01 | LiteLLM cost map（token × 单价） | ✅ 实测 $0.00056/次（远低于 $0.01） |
+| 3 | P95 端到端延迟 | < 3s | Langfuse trace 计时 | ❌ 热查询 P95 26s（rerank CPU 瓶颈）；待 GPU/优化 |
 | 4 | Graph-RAG 相对提升 | +15~20% | naive vs Graph-RAG 同集对比 | ✅ 多跳 answer_correctness 0.78（hybrid 简洁版），见 docs/conclusions.md |
 
 ## 1. 答案准确率（≥ 90%）
@@ -27,7 +27,8 @@
 - **定义**：一次完整 RAG 查询（检索 + 生成）里，LLM 推理的 token 成本。
 - **测量**：`LLMResult.prompt_tokens` + `completion_tokens` × 模型单价（LiteLLM cost map）。
 - **现状**：DeepSeek `deepseek-flash` 实测 prompt=302 / completion=602 tokens，成本远低于 $0.01。
-- **Phase 4 进展**：`generate` span 已回填 `usage_details`（input/output token），Langfuse trace 与 dashboard 可直接看到 token 用量；成本 = token × 单价，待接 litellm cost map（当前 `totalCost` 仍为 0）。
+- **Phase 4 完成**：`LLMResult` 加 `input_cost`/`output_cost`（litellm cost map 按 token × 单价拆算），`generate` span 回填 `cost_details`（input/output/total），Langfuse `totalCost` 与 dashboard「累计成本」有真实数字。
+- **实测**：热查询 10 次平均单次成本 **$0.00056**（deepseek-flash，单价 input $0.3/M + output $1.2/M），远低于 KPI 目标 $0.01。
 - **设计支撑**：LLM 分层（Haiku 5.5 主力 + DeepSeek Flash 备选），复杂查询才升级模型，控制边际成本。
 
 ## 3. P95 端到端延迟（< 3s）
@@ -35,7 +36,8 @@
 - **定义**：从用户提问到返回答案的端到端耗时，取 P95 分位（排除偶发抖动）。
 - **测量**：Langfuse trace 记录每个 span（retrieve / rerank / generate）耗时，`dashboard.py` 直接展示三段延迟分解。
 - **Phase 4 实测（冷启动，单次进程加载模型）**：总 36.5s，其中 retrieve 4.84s / rerank 27.97s / generate 3.68s。冷启动大头是 reranker 首次加载（bge-reranker-v2-m3 2.2G）。
-- **待测**：热查询（模型已驻留内存）的 P95 延迟——需在同进程多次查询下统计。
+- **Phase 4 实测（热查询，N=10）**：P95 26.0s / mean 24.5s，三段分解 retrieve ~2.3s / rerank ~20.5s / generate ~2.2s。**瓶颈是 rerank**（cross-encoder 在 CPU 上对 ~36 候选打分 ~20s）。
+- **结论**：CPU 无 GPU 下，rerank 是延迟最大头；达标（<3s）需 GPU（cross-encoder 降到几十 ms）或减少 rerank 候选数 / 换轻量 reranker。
 - **现实约束**：当前环境无 GPU，bge-m3 走 CPU（embedding 单次 ~2s）。GPU（WSL2 / 4060 Ti）可降到几十 ms。
 - **注**：CPU 环境下的延迟是「下限验证」，真正对标在 GPU 环境做。
 

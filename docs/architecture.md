@@ -105,7 +105,7 @@ fallback: deepseek/deepseek-flash（便宜，国内可直连）
 
 - `ask()` 外层包 `rag-query` root trace（chain），graph 节点内用 `trace()` 埋 span
 - 4 个 span：`rag-query`（chain）/ `retrieve`（retriever）/ `rerank`（span）/ `generate`（generation）
-- `generate` span 通过 `span.update(usage_details=..., model=...)` 回填 token 与模型
+- `generate` span 通过 `span.update(usage_details=..., cost_details=..., model=...)` 回填 token、成本与模型
 - 追踪失败 try/except 静默 no-op，不影响主流程
 
 ### 8.3 观测数据 + dashboard
