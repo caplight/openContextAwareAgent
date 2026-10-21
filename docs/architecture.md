@@ -60,13 +60,13 @@ Qdrant (local mode)
 ## 4. LLM 分层降级
 
 ```
-primary: claude-haiku-5-5（质量优先，需要 ANTHROPIC_API_KEY）
+primary: deepseek/deepseek-flash（便宜，国内可直连）
    │  失败 / 未配 key
    ▼
-fallback: deepseek/deepseek-flash（便宜，国内可直连）
+fallback: claude-haiku-5-5（质量优先，需要 ANTHROPIC_API_KEY）
 ```
 
-- 当前环境未配 Anthropic key → 自动 fallback 到 DeepSeek（已验证）
+- 当前主力 DeepSeek（成本低、国内可直连），Claude 留作备选（20:45 已改）
 - 单次查询成本 < $0.01（KPI #2）
 
 ## 5. 演进路线
@@ -75,7 +75,7 @@ fallback: deepseek/deepseek-flash（便宜，国内可直连）
 |-------|------|------|
 | **Phase 1** | naive RAG 基线（向量检索 + LLM 生成） | ✅ 完成（含 RAGAS baseline，见 docs/evaluation/） |
 | **Phase 2** | 混合检索（BM25+dense）+ Reranker + Graph-RAG（LightRAG） | ✅ 完成（结论见 docs/conclusions.md） |
-| **Phase 3** | 模拟 EKS backend + DevOps 助手（贴近求职方向） | 🔜 |
+| **Phase 3** | 模拟 EKS backend + DevOps 助手（集群状态源选 KWOK，已搭建 + Stage CRD + 故障注入） | 🚧 进行中（详见 `docs/kwok.md`） |
 | **Phase 4** | 可观测（Langfuse 自托管）+ hybrid/rerank 接主线 + Streamlit dashboard | ✅ 完成（本文件当前态） |
 
 ## 6. 关键设计决策

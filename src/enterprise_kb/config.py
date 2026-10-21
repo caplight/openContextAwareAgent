@@ -37,8 +37,8 @@ class EmbeddingConfig(BaseModel):
 class LLMConfig(BaseModel):
     """生成 LLM（经 LiteLLM，走 API）。"""
 
-    primary: str = "claude-haiku-5-5"
-    fallback: str = "deepseek/deepseek-flash"
+    primary: str = "deepseek/deepseek-flash"
+    fallback: str = "claude-haiku-5-5"
     temperature: float = 0.0
 
 
