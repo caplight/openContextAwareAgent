@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from enterprise_kb.embed import index_chunks
 from enterprise_kb.graph import ask
 from enterprise_kb.ingest import load_and_split
-from enterprise_kb.tracing import trace_query
 
 app = FastAPI(title="Enterprise Knowledge Base Assistant", version="0.1.0")
 
@@ -41,12 +40,6 @@ def ingest() -> IngestResponse:
 def query(req: QueryRequest) -> QueryResponse:
     """问答：检索 + 生成。"""
     result = ask(req.query)
-    trace_query(
-        req.query,
-        result["contexts"],
-        result["answer"],
-        model=result.get("model"),
-    )
     return QueryResponse(
         answer=result["answer"],
         contexts=result["contexts"],

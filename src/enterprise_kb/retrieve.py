@@ -74,3 +74,20 @@ def retrieve_hybrid(query: str, top_k: int | None = None) -> list[str]:
 
     fused = rrf_fusion([dense_ranked, sparse_ranked])
     return fused[:top_k]
+
+
+def retrieve_hybrid_candidates(query: str, candidate_n: int | None = None) -> list[str]:
+    """Phase 2b 混合召回：dense + BM25 + RRF，返回候选池（供 rerank 精排）。
+
+    与 retrieve_hybrid 的区别：不截断到 top_k，而是返回完整 RRF 融合结果，
+    交给 reranker 精排。候选数用 reranker.top_n（默认 20）。
+    """
+    settings = get_settings()
+    candidate_n = candidate_n or settings.reranker.top_n
+
+    dense_ranked = _dense_ranked(query, candidate_n)
+    bm25 = _get_bm25()
+    sparse_ranked = bm25.search(query, k=candidate_n)
+
+    fused = rrf_fusion([dense_ranked, sparse_ranked])
+    return fused

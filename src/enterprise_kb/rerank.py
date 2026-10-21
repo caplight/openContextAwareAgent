@@ -37,3 +37,39 @@ def rerank(query: str, candidates: list[str], top_k: int) -> list[str]:
     # 按分数降序，分数相同保持原顺序（stable）
     ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
     return [c for c, _ in ranked[:top_k]]
+
+
+def rerank_batch(
+    queries: list[str],
+    candidates_list: list[list[str]],
+    top_k: int,
+    batch_size: int = 32,
+) -> list[list[str]]:
+    """批量精排多个 query 的候选，一次 cross-encoder 前向搞定，比逐条 rerank 快数倍。
+
+    CPU 上 cross-encoder 逐条 query 串行（每条一次 predict）开销大；把所有
+    query-candidate pairs 合并成一个大 batch 一次 predict，减少 Python→C++
+    调用次数 + 大 batch 更好的向量化，显著提速。
+
+    返回与 queries 等长的 list[list[str]]，每个是精排后的 top-k。
+    """
+    if not queries:
+        return []
+    model = get_reranker()
+    pairs: list[tuple[str, str]] = []
+    counts: list[int] = []
+    for q, cands in zip(queries, candidates_list):
+        pairs.extend((q, c) for c in cands)
+        counts.append(len(cands))
+    if not pairs:
+        return [[] for _ in queries]
+    scores = model.predict(pairs, batch_size=batch_size)  # 一次大 batch 前向
+    results: list[list[str]] = []
+    idx = 0
+    for i, n in enumerate(counts):
+        # 每个 query 的候选分数切片，按分数降序（stable，同分保持原顺序）
+        seg = list(zip(candidates_list[i], scores[idx : idx + n]))
+        seg.sort(key=lambda x: x[1], reverse=True)
+        results.append([c for c, _ in seg[:top_k]])
+        idx += n
+    return results

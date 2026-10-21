@@ -9,10 +9,10 @@
 | 编排 | LangGraph |
 | 向量库 | Qdrant（默认 local mode，无需 docker） |
 | Embedding | bge-m3（本地） |
-| Reranker | BGE Reranker v2-m3（Phase 2 接入） |
+| Reranker | BGE Reranker v2-m3（本地，已接入） |
 | 生成 LLM | Claude Haiku 5.5 主力 + DeepSeek V4.1 Flash 备选（LiteLLM 路由） |
 | Graph-RAG | LightRAG（Phase 2 接入） |
-| 可观测 | Langfuse |
+| 可观测 | Langfuse（自托管 docker，v4 SDK） |
 | 后端/前端 | FastAPI + Streamlit |
 | 评测 | RAGAS + HotpotQA |
 
@@ -26,14 +26,18 @@ demo/
 │   ├── llm.py              # LiteLLM 封装（primary→fallback 降级）
 │   ├── ingest.py           # 文档摄入（loader + chunker）
 │   ├── embed.py            # bge-m3 向量化 + Qdrant 存储
-│   ├── retrieve.py         # 纯向量 top-k 检索
+│   ├── retrieve.py         # hybrid 召回（dense bge-m3 + BM25 + RRF）
+│   ├── hybrid.py           # BM25 + dense + RRF 等权融合
+│   ├── rerank.py           # bge-reranker-v2-m3 精排 top-k
 │   ├── generate.py         # RAG prompt + 生成
-│   ├── graph.py            # LangGraph 编排
-│   ├── tracing.py          # Langfuse trace
+│   ├── graph.py            # LangGraph 编排（retrieve → rerank → generate）
+│   ├── tracing.py          # Langfuse trace（root + 节点 span）
+│   ├── observability.py    # 拉 Langfuse REST API 供 dashboard 消费
 │   ├── api.py              # FastAPI
 │   └── cli.py              # CLI（kb ingest）
 ├── tests/                  # pytest 单元测试
-├── frontend/streamlit_app.py
+├── frontend/streamlit_app.py   # Q&A 前端
+├── frontend/dashboard.py       # 可观测 dashboard（:8502）
 ├── eval/                   # HotpotQA + RAGAS 评测
 └── data/docs/              # 演示文档（K8s + AWS 官方文档）
 ```

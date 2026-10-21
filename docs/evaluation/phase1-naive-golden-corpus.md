@@ -7,6 +7,7 @@
 
 | 指标 | 分数 |
 |------|------|
-| faithfulness | 0.9205 |
-| context_precision | 0.5000 |
+| answer_correctness | 0.5161 |
+| faithfulness | 0.9081 |
+| context_precision | 0.5317 |
 | gold_recall@3 | 0.8000 |

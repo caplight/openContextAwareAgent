@@ -23,14 +23,14 @@ import numpy as np
 from openai import OpenAI
 from ragas.dataset_schema import SingleTurnSample
 from ragas.llms import llm_factory
-from ragas.metrics import ContextPrecision, Faithfulness
+from ragas.metrics import AnswerCorrectness, ContextPrecision, Faithfulness
 
 from enterprise_kb.config import BASE_DIR, get_settings
 from enterprise_kb.embed import get_embedding_model
 from enterprise_kb.generate import generate_answer
 from enterprise_kb.hybrid import BM25Retriever, rrf_fusion
 from enterprise_kb.logging import get_logger
-from enterprise_kb.rerank import rerank
+from enterprise_kb.rerank import rerank_batch
 
 logger = get_logger(__name__)
 
@@ -94,19 +94,18 @@ class GoldenRetriever:
         fused = rrf_fusion([dense, sparse])
         return fused[:TOP_K]
 
-    def hybrid_rerank(self, query: str) -> list[str]:
+    def hybrid_candidates(self, query: str) -> list[str]:
+        """混合检索召回到 top-n 候选（不精排），交给 rerank_batch 批量精排。"""
         qv = self._qv(query)
         dense = self._dense_top(qv, RERANK_TOP_N)
         sparse = self.bm25.search(query, k=RERANK_TOP_N)
         fused = rrf_fusion([dense, sparse])
-        candidates = fused[:RERANK_TOP_N]
-        return rerank(query, candidates, TOP_K)
+        return fused[:RERANK_TOP_N]
 
 
 RETRIEVERS = {
     "naive": "naive",
     "hybrid": "hybrid",
-    "hybrid_rerank": "hybrid_rerank",
 }
 
 
@@ -163,6 +162,7 @@ def _judge_one(args):
 
     f_metric = Faithfulness(llm=llm)
     cp_metric = ContextPrecision(llm=llm)
+    ac_metric = AnswerCorrectness(llm=llm, weights=[1.0, 0.0])  # 纯 factuality，不用 embedding
 
     fs = SingleTurnSample(
         user_input=question,
@@ -178,17 +178,25 @@ def _judge_one(args):
         reference=ground_truth,
     )
     cp = float(cp_metric.single_turn_score(cps))
-    return f, cp
+
+    acs = SingleTurnSample(user_input=question, response=answer, reference=ground_truth)
+    ac = float(ac_metric.single_turn_score(acs))
+    return f, cp, ac
 
 
 # ---------- 主流程 ----------
 
 def run_mode(mode: str, samples: list[dict], retriever: GoldenRetriever) -> dict:
-    retrieve_fn = getattr(retriever, RETRIEVERS[mode])
     logger.info("[%s] 开始检索（%d 条）", mode, len(samples))
 
-    # 1. 检索（本地，串行快）
-    retrieved_list = [retrieve_fn(s["question"]) for s in samples]
+    # 1. 检索（本地；hybrid_rerank 先批量召回候选再批量精排）
+    if mode == "hybrid_rerank":
+        questions = [s["question"] for s in samples]
+        candidates_list = [retriever.hybrid_candidates(q) for q in questions]
+        retrieved_list = rerank_batch(questions, candidates_list, TOP_K)
+    else:
+        retrieve_fn = getattr(retriever, RETRIEVERS[mode])
+        retrieved_list = [retrieve_fn(s["question"]) for s in samples]
 
     # 2. 生成（受控并发）
     gen_args = [(s["question"], ctxs) for s, ctxs in zip(samples, retrieved_list)]
@@ -204,13 +212,15 @@ def run_mode(mode: str, samples: list[dict], retriever: GoldenRetriever) -> dict
     logger.info("[%s] RAGAS 打分（并发 %d）...", mode, MAX_WORKERS)
     f_scores: list[float] = []
     cp_scores: list[float] = []
+    ac_scores: list[float] = []
     done = 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = [ex.submit(_judge_one, a) for a in judge_args]
         for fut in as_completed(futures):
-            f, cp = fut.result()
+            f, cp, ac = fut.result()
             f_scores.append(f)
             cp_scores.append(cp)
+            ac_scores.append(ac)
             done += 1
             if done % 10 == 0:
                 logger.info("[%s] judge 进度 %d/%d", mode, done, len(judge_args))
@@ -220,6 +230,7 @@ def run_mode(mode: str, samples: list[dict], retriever: GoldenRetriever) -> dict
     recalls = [r for r in recalls if r is not None]
 
     scores = {
+        "answer_correctness": sum(ac_scores) / len(ac_scores),
         "faithfulness": sum(f_scores) / len(f_scores),
         "context_precision": sum(cp_scores) / len(cp_scores),
         "gold_recall@3": sum(recalls) / len(recalls) if recalls else 0.0,
@@ -244,6 +255,7 @@ def run_mode(mode: str, samples: list[dict], retriever: GoldenRetriever) -> dict
         "",
         "| 指标 | 分数 |",
         "|------|------|",
+        f"| answer_correctness | {scores['answer_correctness']:.4f} |",
         f"| faithfulness | {scores['faithfulness']:.4f} |",
         f"| context_precision | {scores['context_precision']:.4f} |",
         f"| gold_recall@3 | {scores['gold_recall@3']:.4f} |",
@@ -272,7 +284,7 @@ def main() -> None:
         for m in ["naive", "hybrid", "hybrid_rerank"]:
             results[m] = run_mode(m, samples, retriever)
         logger.info("对比结果：%s", results)
-    elif mode in RETRIEVERS:
+    elif mode in ("naive", "hybrid", "hybrid_rerank"):
         run_mode(mode, samples, retriever)
     else:
         raise SystemExit(f"未知 mode：{mode}（可选 naive/hybrid/hybrid_rerank/both）")

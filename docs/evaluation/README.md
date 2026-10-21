@@ -53,9 +53,26 @@ uv run python eval/eval_ragas.py 50
 
 ## 4. 各阶段结果汇总
 
-| 阶段 | 文件 | faithfulness | context_precision |
-|------|------|-------------|-------------------|
-| Phase 1 naive | `phase1-naive-baseline.md` | 见文件 | 见文件 |
-| Phase 2 混合检索 | `phase2-hybrid-rerank-graphrag.md`（待产出） | — | — |
+### 4.1 检索链路（golden corpus 1991 段，50 条，可公平对比）
+
+| 阶段 | 文件 | faithfulness | context_precision | gold_recall@3 |
+|------|------|-------------|-------------------|---------------|
+| Phase 1 naive dense top-3 | `phase1-naive-golden-corpus.md` | 0.9205 | 0.5000 | 0.8000 |
+| Phase 2a hybrid（BM25+dense+RRF）| `phase2a-hybrid-golden-corpus.md` | 0.9121 ⬇️ | 0.4833 ⬇️ | 0.7500 ⬇️ |
+| Phase 2b hybrid + reranker | `phase2b-hybrid-rerank-golden-corpus.md` | **0.9692** ⬆️ | **0.5733** ⬆️ | **0.9400** ⬆️ |
+
+> 核心：hybrid 单独用不升反降；**reranker 是真赢家**。正确链路 = hybrid 召回 top-20 → reranker 精排 top-3。
+
+### 4.2 Graph-RAG（200 段候选池，20 条多跳，看趋势，数字不可与 4.1 直接比）
+
+| 模式 | 文件 | answer_correctness（简洁版） | faithfulness |
+|------|------|------------------------------|--------------|
+| local | `phase2c-graphrag-e2e-concise-local.md` | 0.6783 | 0.7167 |
+| global | `phase2c-graphrag-e2e-concise-global.md` | 0.6833 | 0.7250 |
+| hybrid | `phase2c-graphrag-e2e-concise-hybrid.md` | **0.7833** | 0.8500 |
+
+> Graph-RAG 端到端图推理多跳确实更强（hybrid 最优）。三次归因反转详见 `docs/conclusions.md`。
+
+> 完整结论与踩坑清单见 `docs/conclusions.md`（Phase 2 结论固化）。
 
 > 每阶段跑完更新此表 + 对应结果文件，形成「baseline → 优化」的完整演进曲线（面试可直接引用）。
