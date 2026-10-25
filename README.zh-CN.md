@@ -32,10 +32,12 @@ demo/
 │   ├── rerank.py               # bge-reranker-v2-m3 精排
 │   ├── generate.py             # RAG prompt + 生成
 │   ├── graph.py                # LangGraph 编排（retrieve → rerank → generate）
+│   ├── tools.py                # DevOps 助手工具集（k8s_* + kb_search）
+│   ├── agent.py                # DevOps 助手 ReAct agent
 │   ├── tracing.py              # Langfuse 埋点（root + 节点 span）
 │   ├── observability.py        # 拉 Langfuse API 供 dashboard 消费
 │   ├── api.py                  # FastAPI
-│   └── cli.py                  # CLI（kb ingest）
+│   └── cli.py                  # CLI（kb ingest / kb agent）
 ├── tests/                      # pytest
 ├── frontend/streamlit_app.py   # Q&A 前端
 ├── frontend/dashboard.py       # 可观测 dashboard（:8502）
@@ -82,13 +84,21 @@ uv run pytest
 uv run ruff check .
 ```
 
+### 6. DevOps 助手（Phase 3）
+
+```bash
+uv run kb agent "payment-svc 一直重启为什么"   # agent 自主决定查集群还是查文档
+```
+
+> 详见 [`docs/agent.md`](docs/agent.md)。
+
 ## Phase 进度
 
 | Phase | 内容 | 状态 |
 |---|---|---|
 | Phase 1 | Naive RAG 基线（向量检索 + 生成） | ✅ 完成 |
 | Phase 2 | 混合检索（BM25+dense）+ reranker + Graph-RAG（LightRAG） | ✅ 完成 |
-| Phase 3 | 模拟集群后端（KWOK）+ DevOps 助手 | 🚧 进行中 — 见 [`docs/kwok.md`](docs/kwok.md) |
+| Phase 3 | 模拟集群后端（KWOK）+ DevOps 助手 | 🚧 进行中 — 见 [`docs/kwok.md`](docs/kwok.md) + [`docs/agent.md`](docs/agent.md) |
 | Phase 4 | 可观测（Langfuse）+ hybrid/rerank 接主线 + dashboard | ✅ 完成 |
 
 ## Phase 1 模块映射
@@ -105,6 +115,7 @@ uv run ruff check .
 
 - [`docs/architecture.md`](docs/architecture.md) — 架构与数据流
 - [`docs/kwok.md`](docs/kwok.md) — 模拟集群后端（Phase 3）
+- [`docs/agent.md`](docs/agent.md) — DevOps 助手（ReAct agent）
 - [`docs/kpi.md`](docs/kpi.md) — 成本与延迟 KPI
 - [`docs/conclusions.md`](docs/conclusions.md) — Phase 2 结论
 - [`docs/decisions/`](docs/decisions/) — 架构决策记录（ADR）

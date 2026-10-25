@@ -86,7 +86,7 @@ kubectl get <resource> <name>                     # ② 检测：直接看到异
 kubectl label <resource> <name> simulate-         # ③ 恢复：去 label → 恢复 Stage 自动拉回健康
 ```
 
-### 完整清单（9 种故障，全部验证通过）
+### 完整清单（10 种故障，全部验证通过）
 
 | 层级 | 故障 | label value | 状态特征 | 注入方式 |
 |---|---|---|---|---|
@@ -171,7 +171,12 @@ spec:
         lastTransitionTime: {{ $now | Quote }}
 ```
 
-### 恢复 Stage（node + pod 各一个，通用）
+### 恢复 Stage（pod 一个通用 + node 拆成 5 个）
+
+> ⚠️ node 恢复**不能**像 pod 那样写一个通用 Stage。早期 node-recover 用 jq 表达式
+> `.status.conditions.[] | select(.type != "Ready" and .status == "True") | .type`
+> 想匹配「非 Ready 的 True condition」，但 KWOK 的 jq 引擎**不支持 `!=` 和 `and` 操作符**，
+> 这个表达式永远不匹配 → 恢复 Stage 从不触发。所以拆成 5 个独立恢复 Stage，每个用确定的 `==` 语法。
 
 **pod-recover**：匹配「phase 非正常 + Ready 不为 True + simulate label 已去掉」的 pod，拉回 Running。关键技巧是用 `DoesNotExist` 匹配「label 已去掉」，去 label 后自动接管，无需手动 patch：
 
@@ -220,7 +225,17 @@ spec:
         lastTransitionTime: {{ $now | Quote }}
 ```
 
-**node-recover**：匹配「simulate label 已去掉 + 有非 Ready 的 True condition」的 node，把所有压力/网络 condition 置 False、Ready 置 True。
+**node-recover（拆成 5 个独立 Stage）**：
+
+| Stage | 匹配 condition | 恢复动作 |
+|---|---|---|
+| `node-recover-notready` | Ready=False | Ready→True |
+| `node-recover-memorypressure` | MemoryPressure=True | →False |
+| `node-recover-diskpressure` | DiskPressure=True | →False |
+| `node-recover-pidpressure` | PIDPressure=True | →False |
+| `node-recover-networkunavailable` | NetworkUnavailable=True | →False |
+
+每个的 selector 都用「simulate label 已去掉 + 目标 condition 为 True」双条件，jq 表达式用确定的 `==` 语法（例如 `.status.conditions.[] | select(.type == "MemoryPressure") | .status` + `operator: In, values: ["True"]`）。这样去 label 后对应的恢复 Stage 自动接管，无需手动 patch。
 
 ### Unschedulable：唯一的「天然」故障
 
@@ -264,6 +279,12 @@ EOF
 
 8. **bash `local` 连环赋值是陷阱。** 写 `local fault=$1 name="t-$fault"` 时，`$fault` 在赋值前就被展开成空值，`name` 变成 `t-`。必须拆两行：`local fault=$1` 然后 `local name="t-$fault"`。否则测试脚本里 pod 名全错，`kubectl` 静默失败（配 `2>/dev/null` 更难排查）。
 
+9. **node-heartbeat 的 delay 会「占用」node，阻塞 recovery Stage。** 这是最隐蔽的坑。默认 `node-heartbeat-with-lease` 的 `delay: 600000ms`（10 分钟心跳）在 selector 匹配后进入「延迟执行」状态，这个状态会阻塞同 node 的 recovery Stage（`node-recover-*`）触发，导致 demo 里 pressure 故障「注入 ✅ 但恢复 ❌」（condition 残留 True，等 30 秒都不恢复）。解法：把 heartbeat 的 `delay` 改短（我们改成 1000ms），让心跳快速完成、释放 node。另一个副作用是 heartbeat 的 statusTemplate `{{ range NodeConditions }}` 会把所有 condition 重置为默认值，故障注入期间会覆盖故障状态，所以 selector 必须加 `simulate DoesNotExist`（故障期间不心跳）。
+
+10. **KWOK Stage 异步 reconcile 有 1-3 秒抖动，固定 sleep 不可靠。** 故障注入/恢复后立即断言状态，会因 controller 异步 patch 而随机 false negative（同一份代码跑出 5/10、7/10、10/10 三种结果）。解法：脚本用轮询等待状态稳定（`_wait_for(predicate, timeout=15s, interval=0.5s)`），而非固定 sleep 3s。
+
+11. **node 故障与 node-heartbeat / node-initialize 的 selector 竞争。** 两个默认 Stage 都会「重置」node conditions（都遍历 `NodeConditions` 默认值）。故障注入/恢复时它们若同时匹配，会互相覆盖。统一解法：给这两个默认 Stage 的 selector 都加 `simulate DoesNotExist`，让它们在故障生命周期内（simulate label 存在）完全不参与。
+
 ## 常用命令
 
 ```bash
@@ -284,17 +305,22 @@ cd /root/.kwok/clusters/kwok && nohup ./bin/kwok-controller \
 故障/恢复 Stage 文件统一放在 `/tmp/kwok-stages/`：
 
 ```
-node-not-ready.yaml          # NotReady
-node-memory-pressure.yaml    # MemoryPressure
-node-disk-pressure.yaml      # DiskPressure
-node-pid-pressure.yaml       # PIDPressure
-node-network-unavailable.yaml# NetworkUnavailable
-node-recover.yaml            # node 通用恢复
-pod-crashloop.yaml           # CrashLoopBackOff
-pod-oomkilled.yaml           # OOMKilled
-pod-imagepullbackoff.yaml    # ImagePullBackOff
-pod-evicted.yaml             # Evicted
-pod-recover.yaml             # pod 通用恢复
+node-heartbeat.yaml              # 心跳（delay 改短 + simulate DoesNotExist，替代默认）
+node-not-ready.yaml              # NotReady
+node-memory-pressure.yaml        # MemoryPressure
+node-disk-pressure.yaml          # DiskPressure
+node-pid-pressure.yaml           # PIDPressure
+node-network-unavailable.yaml    # NetworkUnavailable
+node-recover-notready.yaml       # node 恢复（Ready）
+node-recover-memorypressure.yaml # node 恢复（MemoryPressure）
+node-recover-diskpressure.yaml   # node 恢复（DiskPressure）
+node-recover-pidpressure.yaml    # node 恢复（PIDPressure）
+node-recover-networkunavailable.yaml # node 恢复（NetworkUnavailable）
+pod-crashloop.yaml               # CrashLoopBackOff
+pod-oomkilled.yaml               # OOMKilled
+pod-imagepullbackoff.yaml        # ImagePullBackOff
+pod-evicted.yaml                 # Evicted
+pod-recover.yaml                 # pod 通用恢复
 ```
 
 （Unschedulable 无 Stage 文件，天然触发。）

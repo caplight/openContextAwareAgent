@@ -18,6 +18,9 @@ logger = get_logger(__name__)
 # 模块级缓存，避免重复加载模型（bge-m3 约 2.2GB）
 _model: SentenceTransformer | None = None
 
+# 模块级缓存，避免重复创建 QdrantClient（local mode 下多次新建会锁文件冲突）
+_client: QdrantClient | None = None
+
 
 def get_embedding_model() -> SentenceTransformer:
     global _model
@@ -43,11 +46,15 @@ def encode(texts: list[str]) -> list[list[float]]:
 
 
 def get_client() -> QdrantClient:
-    """获取 Qdrant client。url 为空时用 local mode（无需 docker）。"""
-    settings = get_settings()
-    if settings.qdrant.url:
-        return QdrantClient(url=settings.qdrant.url)
-    return QdrantClient(path=settings.qdrant.path)
+    """获取 Qdrant client（模块级缓存，避免 local mode 下重复打开 SQLite 锁冲突）。"""
+    global _client
+    if _client is None:
+        settings = get_settings()
+        if settings.qdrant.url:
+            _client = QdrantClient(url=settings.qdrant.url)
+        else:
+            _client = QdrantClient(path=settings.qdrant.path)
+    return _client
 
 
 def ensure_collection() -> None:
