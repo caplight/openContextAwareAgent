@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from enterprise_kb import storage
 from enterprise_kb.agent import astream
+from enterprise_kb.context import compress_history
 from enterprise_kb.config import get_settings
 
 app = FastAPI(title="Kubernetes DevOps Assistant", version="0.1.0")
@@ -96,8 +97,9 @@ async def chat(req: ChatRequest):
     run_id = str(uuid.uuid4())
     cancel_event = asyncio.Event()
     _cancel_events[run_id] = cancel_event
-    # 读会话历史（排除刚写入的当前问题），供 agent 记住上下文（多轮对话）
-    history = [(m.role, m.content) for m in storage.get_messages(session_id)[:-1]]
+    # 读会话历史（排除刚写入的当前问题），超限时压缩后供 agent 记住上下文（多轮对话）
+    raw_history = [(m.role, m.content) for m in storage.get_messages(session_id)[:-1]]
+    history = await compress_history(raw_history)
 
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
