@@ -1,14 +1,16 @@
-"""Streamlit 前端：复用后端逻辑（同进程），快速出可交互 demo。
+"""Streamlit 前端：Kubernetes DevOps 助手（ReAct agent 复用后端逻辑）。
 
+agent 自主决定「查集群（k8s_*）/ 查文档（kb_search）/ 联网（web_search）」取证，
+前端展示最终回答 + 工具调用轨迹（可观测）。
 支持中英双语切换（sidebar 顶部）。
 """
 
 import streamlit as st
 
-from enterprise_kb.graph import ask
+from enterprise_kb.agent import ask
 from locales import lang_selector, make_t
 
-st.set_page_config(page_title="Enterprise KB Assistant", page_icon="📚")
+st.set_page_config(page_title="Kubernetes DevOps Assistant", page_icon="📚")
 
 lang = lang_selector()
 t = make_t(lang)
@@ -27,20 +29,24 @@ query = st.text_input(
 if st.button(t("app_ask")) and query:
     with st.spinner(t("app_spinner")):
         result = ask(query)
+    tool_trace = []
+    for m in result.get("messages", []):
+        if getattr(m, "tool_calls", None):
+            for tc in m.tool_calls:
+                tool_trace.append(f"{tc.get('name')}({tc.get('args')})")
     st.session_state.history.append(
         {
             "query": query,
             "answer": result["answer"],
-            "contexts": result["contexts"],
-            "model": result.get("model", ""),
+            "tool_trace": tool_trace,
         }
     )
 
 for item in reversed(st.session_state.history):
     st.markdown(f"**Q:** {item['query']}")
     st.markdown(f"**{t('answer_prefix')}** {item['answer']}")
-    st.caption(f"{t('app_model_label')}: {item['model']}")
-    with st.expander(f"{t('app_contexts_label')}（{len(item['contexts'])} {t('app_segments_label')}）"):
-        for i, ctx in enumerate(item["contexts"], 1):
-            st.markdown(f"**[{i}]** {ctx}")
+    if item.get("tool_trace"):
+        with st.expander(f"{t('app_tool_trace_label')}（{len(item['tool_trace'])} {t('app_tool_calls')}）"):
+            for i, tr in enumerate(item["tool_trace"], 1):
+                st.markdown(f"**[{i}]** `{tr}`")
     st.divider()

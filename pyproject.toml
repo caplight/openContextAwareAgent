@@ -44,6 +44,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+mcp = [
+    "mcp>=1.9",
+]
 eval = [
     "ragas>=0.2",
     "datasets>=3.0",

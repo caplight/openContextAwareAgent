@@ -26,6 +26,16 @@ def _cmd_agent(question: str) -> int:
     return 0
 
 
+def _cmd_mcp(transport: str, port: int) -> int:
+    from enterprise_kb.mcp_server import mcp
+
+    if transport == "sse":
+        mcp.run(transport="sse", host="0.0.0.0", port=port)
+    else:
+        mcp.run(transport="stdio")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="enterprise-kb")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -34,11 +44,18 @@ def main() -> int:
     p_agent = sub.add_parser("agent", help="DevOps 助手（诊断集群 / 查文档）")
     p_agent.add_argument("question", help="要问的问题，如「payment-svc 一直重启为什么」")
 
+    p_mcp = sub.add_parser("mcp", help="启动 MCP server（把工具暴露成标准 MCP 协议）")
+    p_mcp.add_argument("--transport", choices=["stdio", "sse"], default="stdio",
+                       help="传输方式：stdio（供 MCP 客户端 spawn）或 sse（供远程客户端）")
+    p_mcp.add_argument("--port", type=int, default=8000, help="SSE 监听端口（仅 --transport sse）")
+
     args = parser.parse_args()
     if args.cmd == "ingest":
         return _cmd_ingest()
     if args.cmd == "agent":
         return _cmd_agent(args.question)
+    if args.cmd == "mcp":
+        return _cmd_mcp(args.transport, args.port)
     return 1
 
 

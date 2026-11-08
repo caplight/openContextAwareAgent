@@ -42,15 +42,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "no_query": "(无 query)",
         "answer_prefix": "A:",
         # ===== streamlit_app =====
-        "app_title": "📚 企业知识库智能助手",
-        "app_caption": "企业知识库 RAG 问答（hybrid 召回 + rerank 精排 + LLM 生成）",
+        "app_title": "📚 Kubernetes DevOps 助手",
+        "app_caption": "DevOps 取证助手（查集群 k8s_* + 查文档 kb_search + 联网 web_search）",
         "app_input_label": "输入你的问题",
-        "app_input_placeholder": "e.g. How do I scale a Kubernetes deployment?",
+        "app_input_placeholder": "e.g. 我的节点状态怎么样？某个 pod 为什么一直重启？",
         "app_ask": "提问",
-        "app_spinner": "检索 + 生成中…",
-        "app_model_label": "模型",
-        "app_contexts_label": "引用上下文",
-        "app_segments_label": "段",
+        "app_spinner": "取证 + 分析中…",
+        "app_tool_trace_label": "🔧 工具调用轨迹",
+        "app_tool_calls": "次",
     },
     "en": {
         # 语言切换器
@@ -87,15 +86,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "no_query": "(no query)",
         "answer_prefix": "A:",
         # ===== streamlit_app =====
-        "app_title": "📚 Enterprise KB Assistant",
-        "app_caption": "Enterprise KB RAG Q&A (hybrid recall + rerank + LLM generation)",
+        "app_title": "📚 Kubernetes DevOps Assistant",
+        "app_caption": "DevOps troubleshooting assistant (cluster k8s_* + docs kb_search + web web_search)",
         "app_input_label": "Ask a question",
-        "app_input_placeholder": "e.g. How do I scale a Kubernetes deployment?",
+        "app_input_placeholder": "e.g. What's the status of my nodes? Why is my pod restarting?",
         "app_ask": "Ask",
-        "app_spinner": "Retrieving + generating…",
-        "app_model_label": "Model",
-        "app_contexts_label": "Referenced contexts",
-        "app_segments_label": "segments",
+        "app_spinner": "Investigating + analyzing…",
+        "app_tool_trace_label": "🔧 Tool call trace",
+        "app_tool_calls": "calls",
     },
 }
 

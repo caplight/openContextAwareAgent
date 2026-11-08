@@ -38,7 +38,8 @@ class LLMConfig(BaseModel):
     """生成 LLM（经 LiteLLM，走 API）。"""
 
     primary: str = "deepseek/deepseek-flash"
-    fallback: str = "claude-haiku-5-5"
+    # fallback 也用 deepseek（当前无 anthropic key，claude 不可用）
+    fallback: str = "deepseek/deepseek-v4-pro"
     temperature: float = 0.0
 
 
@@ -84,6 +85,7 @@ class Settings(BaseSettings):
     # API key（仅环境变量注入，不落盘）
     anthropic_api_key: SecretStr | None = None
     deepseek_api_key: SecretStr | None = None
+    brave_api_key: SecretStr | None = None
 
     docs_dir: Path = BASE_DIR / "data" / "docs"
 

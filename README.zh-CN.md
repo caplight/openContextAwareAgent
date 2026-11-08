@@ -32,12 +32,17 @@ demo/
 │   ├── rerank.py               # bge-reranker-v2-m3 精排
 │   ├── generate.py             # RAG prompt + 生成
 │   ├── graph.py                # LangGraph 编排（retrieve → rerank → generate）
-│   ├── tools.py                # DevOps 助手工具集（k8s_* + kb_search）
+│   ├── tools.py                # DevOps 助手工具集（LangChain 适配层，k8s_* + kb_search + web_search）
+│   ├── mcp_server.py           # MCP server（把工具暴露成标准 MCP 协议）
 │   ├── agent.py                # DevOps 助手 ReAct agent
+│   ├── core/                   # 框架无关的核心逻辑（单一真相源）
+│   │   ├── k8s.py              #   kubectl 薄封装 + 4 个查询函数
+│   │   ├── search.py           #   kb_search 检索
+│   │   └── web.py              #   web_search 联网搜索（Brave）
 │   ├── tracing.py              # Langfuse 埋点（root + 节点 span）
 │   ├── observability.py        # 拉 Langfuse API 供 dashboard 消费
 │   ├── api.py                  # FastAPI
-│   └── cli.py                  # CLI（kb ingest / kb agent）
+│   └── cli.py                  # CLI（kb ingest / kb agent / kb mcp）
 ├── tests/                      # pytest
 ├── frontend/streamlit_app.py   # Q&A 前端
 ├── frontend/dashboard.py       # 可观测 dashboard（:8502）
@@ -91,6 +96,18 @@ uv run kb agent "payment-svc 一直重启为什么"   # agent 自主决定查集
 ```
 
 > 详见 [`docs/agent.md`](docs/agent.md)。
+
+### 7. MCP server（跨框架复用）
+
+把同一份工具（k8s_* + kb_search）暴露成标准 MCP 协议，任何 MCP 客户端都能调用：
+
+```bash
+uv sync --extra mcp                # 装 MCP 依赖（可选依赖）
+uv run kb mcp                      # stdio（供 MCP 客户端 spawn）
+uv run kb mcp --transport sse --port 8000   # SSE（供远程客户端）
+```
+
+> 工具逻辑抽在 `src/enterprise_kb/core/`（框架无关），LangChain 与 MCP 两个适配器共用同一份实现。详见 [`docs/agent.md`](docs/agent.md)。
 
 ## Phase 进度
 
