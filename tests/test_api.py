@@ -51,3 +51,28 @@ def test_get_nonexistent_session_404(client):
     assert client.get("/api/sessions/nonexistent").status_code == 404
     assert client.patch("/api/sessions/nonexistent", json={"title": "x"}).status_code == 404
     assert client.delete("/api/sessions/nonexistent").status_code == 404
+
+
+# ---------- 停止生成（F6）----------
+
+
+def test_cancel_returns_ok(client):
+    # cancel 幂等：任意 run_id 都返回 ok（即使不存在）
+    r = client.post("/api/chat/nonexistent-run-id/cancel")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+def test_cancel_sets_event(client):
+    import asyncio
+
+    from enterprise_kb import api
+
+    ev = asyncio.Event()
+    api._cancel_events["test-run"] = ev
+    try:
+        r = client.post("/api/chat/test-run/cancel")
+        assert r.json() == {"ok": True}
+        assert ev.is_set()
+    finally:
+        api._cancel_events.pop("test-run", None)

@@ -12,9 +12,11 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from enterprise_kb import storage
@@ -140,3 +142,24 @@ async def cancel_chat(run_id: str):
     if ev:
         ev.set()
     return {"ok": True}
+
+
+# ---------- 前端静态托管（生产单端口部署，spec 第 3 节）----------
+
+WEB_DIST = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+
+if WEB_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        """SPA fallback：非 /api 路径返回 index.html（前端路由）。"""
+        root = WEB_DIST.resolve()
+        candidate = (root / full_path).resolve() if full_path else None
+        # 静态文件（favicon 等）直接返回；否则 fallback 到 index.html
+        if candidate and candidate.is_file() and candidate.is_relative_to(root):
+            return FileResponse(candidate)
+        index = root / "index.html"
+        if index.exists():
+            return FileResponse(index)
+        raise HTTPException(status_code=404, detail="前端未构建（web/dist 缺失）")
