@@ -5,14 +5,18 @@ from __future__ import annotations
 from enterprise_kb.config import Settings, get_settings
 
 
-def test_defaults():
+def test_defaults(monkeypatch):
+    # .env 里 EMBEDDING__MODEL 指向本地模型路径，这里隔离它测代码默认值
+    monkeypatch.setenv("EMBEDDING__MODEL", "BAAI/bge-m3")
     s = Settings()
     assert s.qdrant.collection == "enterprise_kb"
     assert s.embedding.model == "BAAI/bge-m3"
     assert s.embedding.dim == 1024
-    assert s.llm.primary == "claude-haiku-5-5"
-    assert s.llm.fallback == "deepseek/deepseek-flash"
+    assert s.llm.primary == "deepseek/deepseek-flash"
+    assert s.llm.fallback == "deepseek/deepseek-v4-pro"
     assert s.retrieval.top_k == 5
+    assert s.context.max_tokens == 8000
+    assert s.context.keep_turns == 3
 
 
 def test_env_override(monkeypatch):

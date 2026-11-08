@@ -16,11 +16,11 @@ def _fake_resp(content: str, model: str) -> SimpleNamespace:
 
 def test_primary_success(mocker):
     mock = mocker.patch("enterprise_kb.llm.litellm.completion")
-    mock.return_value = _fake_resp("answer", "claude-haiku-5-5")
+    mock.return_value = _fake_resp("answer", "deepseek/deepseek-flash")
 
     result = generate([{"role": "user", "content": "hi"}])
     assert result.content == "answer"
-    assert result.model == "claude-haiku-5-5"
+    assert result.model == "deepseek/deepseek-flash"
     assert result.prompt_tokens == 10
 
 
@@ -28,14 +28,14 @@ def test_fallback_when_primary_fails(mocker):
     mock = mocker.patch("enterprise_kb.llm.litellm.completion")
 
     def side_effect(model, **kwargs):
-        if model == "claude-haiku-5-5":
+        if model == "deepseek/deepseek-flash":
             raise RuntimeError("primary down")
         return _fake_resp("fallback answer", model)
 
     mock.side_effect = side_effect
 
     result = generate([{"role": "user", "content": "hi"}])
-    assert result.model == "deepseek/deepseek-flash"
+    assert result.model == "deepseek/deepseek-v4-pro"
     assert result.content == "fallback answer"
 
 
