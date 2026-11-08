@@ -50,6 +50,7 @@ function ActionButton({
 export default function MessageBubble({ message, t, onRegenerate, onEdit }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
+  const [showTools, setShowTools] = useState(false)
 
   if (message.role === 'user') {
     if (editing) {
@@ -103,9 +104,37 @@ export default function MessageBubble({ message, t, onRegenerate, onEdit }: Prop
       )}
       {hasTools && (
         <div className="mb-2">
-          {message.toolCalls!.map((c) => (
-            <ToolCallCard key={c.id} call={c} t={t} />
-          ))}
+          {message.streaming ? (
+            // 流式中：展开显示工具卡片（展示取证进度）
+            message.toolCalls!.map((c) => (
+              <ToolCallCard key={c.id} call={c} t={t} />
+            ))
+          ) : (
+            // 流式结束：折叠成标签，点击展开（F2 可折叠）
+            <>
+              <button
+                onClick={() => setShowTools((v) => !v)}
+                className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`h-3.5 w-3.5 transition-transform ${showTools ? 'rotate-90' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+                <span>
+                  {t('actions')} ({message.toolCalls!.length})
+                </span>
+              </button>
+              {showTools &&
+                message.toolCalls!.map((c) => <ToolCallCard key={c.id} call={c} t={t} />)}
+            </>
+          )}
         </div>
       )}
       {message.content && <Markdown>{message.content}</Markdown>}

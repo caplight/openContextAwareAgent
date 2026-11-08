@@ -33,6 +33,7 @@ const translations: Record<Lang, Record<string, string>> = {
     duration: '耗时',
     // 思考
     thinking: '思考过程',
+    actions: '工具调用',
     // 引用
     sources: '引用来源',
     // 主题/语言
@@ -70,6 +71,7 @@ const translations: Record<Lang, Record<string, string>> = {
     statusError: 'Failed',
     duration: 'Duration',
     thinking: 'Thinking',
+    actions: 'Actions',
     sources: 'Sources',
     darkMode: 'Dark',
     lightMode: 'Light',
