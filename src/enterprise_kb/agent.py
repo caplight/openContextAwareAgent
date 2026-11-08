@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from langchain_community.chat_models import ChatLiteLLM
@@ -42,16 +43,46 @@ _SYSTEM_PROMPT = (
 )
 
 
-def build_agent():
-    """构造 ReAct agent（LLM + 工具池）。"""
+def build_agent(lang: str | None = None):
+    """构造 ReAct agent（LLM + 工具池）。
+
+    lang 为 None 时不追加语言约束；为 'zh'/'en' 时追加硬性语言要求，
+    保证回复全程单一语言（防止 deepseek-flash 中英文混用）。
+    """
     _setup_keys()
     settings = get_settings()
     model = ChatLiteLLM(model=settings.llm.primary, temperature=settings.llm.temperature)
-    logger.info("构建 DevOps ReAct agent，model=%s，tools=%d", settings.llm.primary, len(ALL_TOOLS))
-    return create_react_agent(model, ALL_TOOLS, prompt=_SYSTEM_PROMPT)
+    prompt = _SYSTEM_PROMPT
+    if lang == "zh":
+        prompt += (
+            "\n\n【硬性语言要求】本次对话必须全程用中文回答，从第一个字到最后一个字都是中文，"
+            "严禁中英文混用（专有名词、命令、代码、技术术语可保留英文原文）。"
+        )
+    elif lang == "en":
+        prompt += (
+            "\n\n【硬性语言要求】本次对话必须全程用英文回答，从第一个字到最后一个字都是英文，"
+            "严禁中英文混用（专有名词、命令、代码、技术术语可保留原文）。"
+        )
+    logger.info("构建 DevOps ReAct agent，model=%s，tools=%d，lang=%s", settings.llm.primary, len(ALL_TOOLS), lang)
+    return create_react_agent(model, ALL_TOOLS, prompt=prompt)
 
 
-# 模块级单例（供 API / CLI 复用）
+def _detect_lang(text: str) -> str:
+    """检测文本语言：含中文字符 → 'zh'，否则 'en'。"""
+    return "zh" if re.search(r"[\u4e00-\u9fff]", text) else "en"
+
+
+# 按语言缓存的 agent 单例（zh / en 各一个，避免每次重建）
+_agents: dict[str, object] = {}
+
+
+def _get_agent(lang: str):
+    if lang not in _agents:
+        _agents[lang] = build_agent(lang)
+    return _agents[lang]
+
+
+# 模块级单例（供 API / CLI 复用，默认无语言约束）
 agent = build_agent()
 
 
@@ -82,8 +113,10 @@ async def astream(question: str):
     reasoning_step = 0
     tool_start_ts: dict[str, float] = {}
     answer_parts: list[str] = []
+    lang = _detect_lang(question)
+    agent_for_lang = _get_agent(lang)
     try:
-        async for event in agent.astream_events(
+        async for event in agent_for_lang.astream_events(
             {"messages": [("user", question)]},
             version="v2",
         ):

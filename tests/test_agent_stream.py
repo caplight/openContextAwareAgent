@@ -37,7 +37,7 @@ class FakeAgent:
 
 def _collect(events):
     async def run():
-        agent_mod.agent = FakeAgent(events)
+        agent_mod._get_agent = lambda lang: FakeAgent(events)
         return [e async for e in agent_mod.astream("问题")]
 
     return asyncio.run(run())
@@ -119,7 +119,7 @@ def test_astream_error(monkeypatch):
             yield  # pragma: no cover
 
     async def run():
-        agent_mod.agent = BoomAgent()
+        agent_mod._get_agent = lambda lang: BoomAgent()
         return [e async for e in agent_mod.astream("问题")]
 
     out = asyncio.run(run())
