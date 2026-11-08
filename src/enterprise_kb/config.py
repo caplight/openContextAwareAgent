@@ -51,6 +51,13 @@ class RetrievalConfig(BaseModel):
     chunk_overlap: int = 51
 
 
+class ContextConfig(BaseModel):
+    """上下文压缩参数（历史超限时的摘要 buffer）。"""
+
+    max_tokens: int = 8000  # 历史超过此 token 数触发压缩
+    keep_turns: int = 3  # 压缩后保留最近几轮原文
+
+
 class RerankerConfig(BaseModel):
     """本地 bge-reranker-v2-m3 精排（cross-encoder）。"""
 
@@ -89,6 +96,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingConfig = EmbeddingConfig()
     llm: LLMConfig = LLMConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
+    context: ContextConfig = ContextConfig()
     reranker: RerankerConfig = RerankerConfig()
     langfuse: LangfuseConfig = LangfuseConfig()
     ui: UIConfig = UIConfig()
