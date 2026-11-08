@@ -99,8 +99,11 @@ def ask(question: str) -> dict:
     return {"answer": answer, "messages": messages}
 
 
-async def astream(question: str):
+async def astream(question: str, history: list[tuple[str, str]] | None = None):
     """流式版 ask：逐事件 yield dict，供 SSE 层转发（spec 第 5.1 节）。
+
+    history: 该会话的历史消息（(role, content) 列表，role 为 user/assistant），
+            用于让 agent 记住上下文（多轮对话）。默认 None 表示无历史。
 
     产出的事件类型：
         reasoning_start / reasoning_delta / reasoning_end  — agent 思考过程（F3）
@@ -115,9 +118,11 @@ async def astream(question: str):
     answer_parts: list[str] = []
     lang = _detect_lang(question)
     agent_for_lang = _get_agent(lang)
+    messages: list[tuple[str, str]] = list(history or [])
+    messages.append(("user", question))
     try:
         async for event in agent_for_lang.astream_events(
-            {"messages": [("user", question)]},
+            {"messages": messages},
             version="v2",
         ):
             kind = event["event"]

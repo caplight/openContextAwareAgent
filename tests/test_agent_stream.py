@@ -127,6 +127,32 @@ def test_astream_error(monkeypatch):
     assert "boom" in out[-1]["message"]
 
 
+def test_astream_passes_history():
+    """历史消息应拼在输入 messages 里，供 agent 记住上下文。"""
+    captured = {}
+
+    class CapturingAgent:
+        async def astream_events(self, input, version="v2"):
+            captured["input"] = input
+            yield {"event": "on_chat_model_stream", "data": {"chunk": FakeChunk(content="ok")}}
+
+    async def run():
+        agent_mod._get_agent = lambda lang: CapturingAgent()
+        return [
+            e
+            async for e in agent_mod.astream(
+                "新问题", history=[("user", "旧问题"), ("assistant", "旧回答")]
+            )
+        ]
+
+    asyncio.run(run())
+    assert captured["input"]["messages"] == [
+        ("user", "旧问题"),
+        ("assistant", "旧回答"),
+        ("user", "新问题"),
+    ]
+
+
 # ---------- _extract_tool_output ----------
 
 

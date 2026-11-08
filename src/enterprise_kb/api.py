@@ -96,6 +96,8 @@ async def chat(req: ChatRequest):
     run_id = str(uuid.uuid4())
     cancel_event = asyncio.Event()
     _cancel_events[run_id] = cancel_event
+    # 读会话历史（排除刚写入的当前问题），供 agent 记住上下文（多轮对话）
+    history = [(m.role, m.content) for m in storage.get_messages(session_id)[:-1]]
 
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
@@ -105,7 +107,7 @@ async def chat(req: ChatRequest):
         yield _sse({"type": "meta", "session_id": session_id, "model": model, "run_id": run_id})
 
         try:
-            async for e in astream(req.message):
+            async for e in astream(req.message, history=history):
                 if cancel_event.is_set():
                     yield _sse({"type": "error", "message": "cancelled"})
                     return
