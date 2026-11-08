@@ -1,52 +1,142 @@
-"""FastAPI 入口（M1.5）：/ingest（摄入建索引）+ /query（问答）。"""
+"""FastAPI 层：SSE 流式聊天 + 会话管理 REST API（spec 第 5 节）。
+
+- POST /api/chat             流式聊天（SSE），事件协议见 spec 5.1
+- GET/POST /api/sessions     会话列表 / 新建
+- GET/PATCH/DELETE /api/sessions/{id}   获取 / 重命名 / 删除
+"""
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
+import uuid
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from enterprise_kb.embed import index_chunks
-from enterprise_kb.graph import ask
-from enterprise_kb.ingest import load_and_split
+from enterprise_kb import storage
+from enterprise_kb.agent import astream
+from enterprise_kb.config import get_settings
 
-app = FastAPI(title="Enterprise Knowledge Base Assistant", version="0.1.0")
-
-
-class QueryRequest(BaseModel):
-    query: str
+app = FastAPI(title="Kubernetes DevOps Assistant", version="0.1.0")
 
 
-class QueryResponse(BaseModel):
-    answer: str
-    contexts: list[str]
-    model: str
+# ---------- 请求模型 ----------
+
+class ChatRequest(BaseModel):
+    session_id: str | None = None
+    message: str
 
 
-class IngestResponse(BaseModel):
-    indexed_chunks: int
+class SessionCreate(BaseModel):
+    title: str = ""
 
 
-@app.post("/ingest", response_model=IngestResponse)
-def ingest() -> IngestResponse:
-    """摄入 data/docs 下所有文档并建索引。"""
-    chunks = load_and_split()
-    if not chunks:
-        raise HTTPException(status_code=400, detail="data/docs 下没有可摄入的文档")
-    n = index_chunks(chunks)
-    return IngestResponse(indexed_chunks=n)
+class SessionRename(BaseModel):
+    title: str
 
 
-@app.post("/query", response_model=QueryResponse)
-def query(req: QueryRequest) -> QueryResponse:
-    """问答：检索 + 生成。"""
-    result = ask(req.query)
-    return QueryResponse(
-        answer=result["answer"],
-        contexts=result["contexts"],
-        model=result["model"],
-    )
+# ---------- SSE 辅助 ----------
+
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
+# 运行中的流式任务取消信号（run_id -> asyncio.Event）
+_cancel_events: dict[str, asyncio.Event] = {}
+
+
+# ---------- 会话管理 ----------
+
+@app.get("/api/sessions")
+def list_sessions():
+    return [s.__dict__ for s in storage.list_sessions()]
+
+
+@app.post("/api/sessions")
+def create_session(req: SessionCreate):
+    s = storage.create_session(title=req.title)
+    return s.__dict__
+
+
+@app.get("/api/sessions/{session_id}")
+def get_session(session_id: str):
+    s = storage.get_session(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {**s.__dict__, "messages": [m.__dict__ for m in storage.get_messages(session_id)]}
+
+
+@app.patch("/api/sessions/{session_id}")
+def rename_session(session_id: str, req: SessionRename):
+    if not storage.rename_session(session_id, req.title):
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True}
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str):
+    if not storage.delete_session(session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True}
+
+
+# ---------- 流式聊天 ----------
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    session_id = req.session_id or storage.create_session().id
+    storage.add_message(session_id, "user", req.message)
+    model = get_settings().llm.primary
+    run_id = str(uuid.uuid4())
+    cancel_event = asyncio.Event()
+    _cancel_events[run_id] = cancel_event
+
+    async def event_stream() -> AsyncIterator[str]:
+        answer_parts: list[str] = []
+        tool_trace: list[storage.ToolCall] = []
+        tool_meta: dict[str, dict] = {}  # run_id -> {name, args, start}
+
+        yield _sse({"type": "meta", "session_id": session_id, "model": model, "run_id": run_id})
+
+        try:
+            async for e in astream(req.message):
+                if cancel_event.is_set():
+                    yield _sse({"type": "error", "message": "cancelled"})
+                    return
+                yield _sse(e)
+                t = e["type"]
+                if t == "text_delta":
+                    answer_parts.append(e["delta"])
+                elif t == "tool_start":
+                    tool_meta[e["id"]] = {"name": e["name"], "args": e["args"], "start": time.time()}
+                elif t == "tool_end":
+                    meta = tool_meta.pop(e["id"], {})
+                    duration = int((time.time() - meta.get("start", time.time())) * 1000)
+                    tool_trace.append(
+                        storage.ToolCall(
+                            name=e["name"],
+                            args=meta.get("args", {}),
+                            output=e["output"],
+                            status=e["status"],
+                            duration_ms=duration,
+                        )
+                    )
+                elif t == "done":
+                    storage.add_message(session_id, "assistant", "".join(answer_parts), tool_trace)
+        finally:
+            _cancel_events.pop(run_id, None)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/api/chat/{run_id}/cancel")
+async def cancel_chat(run_id: str):
+    """中断某次流式运行（spec 5.3 / F6）。"""
+    ev = _cancel_events.get(run_id)
+    if ev:
+        ev.set()
+    return {"ok": True}

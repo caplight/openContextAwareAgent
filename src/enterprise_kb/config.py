@@ -67,6 +67,16 @@ class LangfuseConfig(BaseModel):
     host: str = "https://cloud.langfuse.com"
 
 
+class UIConfig(BaseModel):
+    """Web UI 配置（spec 第 7 节）。"""
+
+    default_lang: str = "en"  # en | zh
+    default_theme: str = "dark"  # dark | light
+    db_path: Path = BASE_DIR / "data" / "chat.db"  # SQLite 会话库
+    sse_heartbeat_sec: int = 15  # SSE 心跳间隔（秒）
+    session_ttl_days: int = 30  # 会话保留天数
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
@@ -81,6 +91,7 @@ class Settings(BaseSettings):
     retrieval: RetrievalConfig = RetrievalConfig()
     reranker: RerankerConfig = RerankerConfig()
     langfuse: LangfuseConfig = LangfuseConfig()
+    ui: UIConfig = UIConfig()
 
     # API key（仅环境变量注入，不落盘）
     anthropic_api_key: SecretStr | None = None

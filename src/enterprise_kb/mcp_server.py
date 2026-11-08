@@ -29,12 +29,25 @@ mcp = MCPServer(
 )
 
 # 直接把 core 函数注册为 MCP tool（自动继承 name + 签名 + docstring）
+# k8s 工具返回 str，直接注册；search/web 返回结构化 SearchResult，包装成文本。
 mcp.tool()(k8s.k8s_get)
 mcp.tool()(k8s.k8s_describe)
 mcp.tool()(k8s.k8s_logs)
 mcp.tool()(k8s.k8s_events)
-mcp.tool()(search.kb_search)
-mcp.tool()(web.web_search)
+
+
+def _kb_search_mcp(query: str, top_k: int = 5) -> str:
+    """检索企业知识库文档，返回最相关片段（文本）。"""
+    return search.kb_search(query, top_k).to_text()
+
+
+def _web_search_mcp(query: str, top_k: int = 5) -> str:
+    """联网搜索（Brave），返回标题+链接+摘要（文本）。"""
+    return web.web_search(query, top_k).to_text()
+
+
+mcp.tool()(_kb_search_mcp)
+mcp.tool()(_web_search_mcp)
 
 
 if __name__ == "__main__":

@@ -25,12 +25,33 @@ def _wrap(func) -> StructuredTool:
     )
 
 
+def _wrap_search(func) -> StructuredTool:
+    """把返回 SearchResult 的 core 函数包装成 content_and_artifact tool。
+
+    content = 给 LLM 的纯文本（agent 行为不变）；artifact = 给前端的结构化引用
+    来源列表（spec F9 方案 B）。artifact 会随 on_tool_end 的 ToolMessage.artifact 流出。
+    """
+
+    def _runner(query: str, top_k: int = 5) -> tuple[str, list[dict]]:
+        result = func(query, top_k)
+        return result.to_text(), result.to_sources()
+
+    _runner.__name__ = func.__name__
+    _runner.__doc__ = func.__doc__
+    return StructuredTool.from_function(
+        func=_runner,
+        name=func.__name__,
+        description=func.__doc__,
+        response_format="content_and_artifact",
+    )
+
+
 k8s_get = _wrap(k8s.k8s_get)
 k8s_describe = _wrap(k8s.k8s_describe)
 k8s_logs = _wrap(k8s.k8s_logs)
 k8s_events = _wrap(k8s.k8s_events)
-kb_search = _wrap(search.kb_search)
-web_search = _wrap(web.web_search)
+kb_search = _wrap_search(search.kb_search)
+web_search = _wrap_search(web.web_search)
 
 # 全部工具（agent 的工具池）
 ALL_TOOLS = [k8s_get, k8s_describe, k8s_logs, k8s_events, kb_search, web_search]

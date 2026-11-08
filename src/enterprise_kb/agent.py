@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import time
+
 from langchain_community.chat_models import ChatLiteLLM
 from langgraph.prebuilt import create_react_agent
 
@@ -63,3 +65,99 @@ def ask(question: str) -> dict:
     messages = result.get("messages", [])
     answer = messages[-1].content if messages else ""
     return {"answer": answer, "messages": messages}
+
+
+async def astream(question: str):
+    """流式版 ask：逐事件 yield dict，供 SSE 层转发（spec 第 5.1 节）。
+
+    产出的事件类型：
+        reasoning_start / reasoning_delta / reasoning_end  — agent 思考过程（F3）
+        tool_start / tool_end                             — 工具调用（F2）
+        text_delta                                        — 回答文本增量（F1）
+        citations                                         — 结构化引用来源（F9）
+        done / error                                      — 终止事件
+    """
+    in_reasoning = False
+    reasoning_step = 0
+    tool_start_ts: dict[str, float] = {}
+    answer_parts: list[str] = []
+    try:
+        async for event in agent.astream_events(
+            {"messages": [("user", question)]},
+            version="v2",
+        ):
+            kind = event["event"]
+
+            if kind == "on_chat_model_start":
+                in_reasoning = False  # 新一轮 LLM 调用，重置思考状态
+
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"]["chunk"]
+                rc = (getattr(chunk, "additional_kwargs", {}) or {}).get("reasoning_content", "") or ""
+                content = getattr(chunk, "content", "") or ""
+                if rc and not in_reasoning:
+                    in_reasoning = True
+                    reasoning_step += 1
+                    yield {"type": "reasoning_start", "step": reasoning_step}
+                if rc:
+                    yield {"type": "reasoning_delta", "delta": rc}
+                if content and in_reasoning:
+                    in_reasoning = False
+                    yield {"type": "reasoning_end"}
+                if content:
+                    answer_parts.append(content)
+                    yield {"type": "text_delta", "delta": content}
+
+            elif kind == "on_tool_start":
+                tool_start_ts[event["run_id"]] = time.time()
+                yield {
+                    "type": "tool_start",
+                    "id": event["run_id"],
+                    "name": event["name"],
+                    "args": event["data"].get("input", {}),
+                }
+
+            elif kind == "on_tool_end":
+                output = event["data"].get("output")
+                content, artifact = _extract_tool_output(output)
+                start = tool_start_ts.pop(event["run_id"], time.time())
+                yield {
+                    "type": "tool_end",
+                    "id": event["run_id"],
+                    "name": event["name"],
+                    "output": content,
+                    "status": "success",
+                    "duration_ms": int((time.time() - start) * 1000),
+                }
+                if artifact:
+                    yield {"type": "citations", "sources": artifact}
+
+        yield {"type": "done", "answer": "".join(answer_parts)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("agent 流式执行失败")
+        yield {"type": "error", "message": str(e)}
+
+
+def _extract_tool_output(output) -> tuple[str, list | None]:
+    """从 on_tool_end 的 output 提取（纯文本, 结构化引用）。
+
+    content_and_artifact 工具的 output 是 ToolMessage（content + artifact）；
+    普通工具是 ToolMessage（仅 content）或裸 str。防御性处理多种结构。
+    """
+    content = ""
+    artifact = None
+    if output is None:
+        content = ""
+    elif isinstance(output, str):
+        content = output
+    elif hasattr(output, "content"):
+        content = output.content or ""
+        artifact = getattr(output, "artifact", None)
+        if not artifact:
+            artifact = None
+    else:
+        content = str(output)
+    # artifact 可能不是 list（异常结构），统一成 list 或 None
+    if isinstance(artifact, list):
+        return content, artifact
+    return content, None

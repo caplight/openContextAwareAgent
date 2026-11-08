@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+@import 'highlight.js/styles/github-dark.css';
+
+@plugin '@tailwindcss/typography';
+
+/* 手动暗色主题（class 策略）：html 上加 .dark 即切暗色 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

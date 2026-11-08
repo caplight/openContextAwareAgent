@@ -13,6 +13,8 @@ import re
 import urllib.parse
 import urllib.request
 
+from enterprise_kb.core.result import SearchHit, SearchResult
+
 _BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 _MAX_DESC_CHARS = 400
 
@@ -33,12 +35,12 @@ def _strip_html(text: str) -> str:
     return html.unescape(text).strip()
 
 
-def web_search(query: str, top_k: int = 5) -> str:
+def web_search(query: str, top_k: int = 5) -> SearchResult:
     """联网搜索（Brave Search API），补充本地知识库未覆盖的信息。
 
     当 kb_search 检索不到相关内容时（如「CrashLoopBackOff 怎么排查」这类
     本地语料没有的知识），用这个工具联网搜索官方文档 / 社区答案。
-    返回标题 + 链接 + 摘要（带编号），供后续综合判断；不生成最终答案。
+    返回结构化 SearchResult（标题 + 链接 + 摘要），供后续综合判断；不生成最终答案。
 
     Args:
         query: 搜索查询（自然语言问题或关键词）
@@ -46,7 +48,7 @@ def web_search(query: str, top_k: int = 5) -> str:
     """
     key = _get_brave_key()
     if not key:
-        return "[错误] 未配置 BRAVE_API_KEY，无法联网搜索。"
+        return SearchResult(query=query, note="[错误] 未配置 BRAVE_API_KEY，无法联网搜索。")
 
     params = urllib.parse.urlencode({"q": query, "count": max(1, min(top_k, 20))})
     req = urllib.request.Request(
@@ -60,19 +62,19 @@ def web_search(query: str, top_k: int = 5) -> str:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:  # noqa: BLE001
-        return f"[错误] 联网搜索失败：{e}"
+        return SearchResult(query=query, note=f"[错误] 联网搜索失败：{e}")
 
     results = (data.get("web") or {}).get("results", [])
     if not results:
-        return "[提示] 没有搜到相关结果。"
+        return SearchResult(query=query, note="[提示] 没有搜到相关结果。")
 
-    lines = []
-    for i, r in enumerate(results[:top_k]):
+    hits = []
+    for r in results[:top_k]:
         title = _strip_html(r.get("title") or "")
         url = r.get("url") or ""
         desc = _strip_html(r.get("description") or "")
         if len(desc) > _MAX_DESC_CHARS:
             desc = desc[: _MAX_DESC_CHARS] + "..."
-        lines.append(f"[{i + 1}] {title}\n    {url}\n    {desc}")
+        hits.append(SearchHit(title=title, url=url, snippet=desc))
 
-    return "\n\n".join(lines)
+    return SearchResult(query=query, hits=hits)
