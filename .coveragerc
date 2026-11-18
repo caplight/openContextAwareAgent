@@ -1,0 +1,7 @@
+[run]
+source = enterprise_kb
+timid = True
+omit =
+    */site-packages/*
+    */numpy/*
+    */transformers/*

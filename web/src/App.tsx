@@ -4,6 +4,7 @@ import ChatWindow from './components/ChatWindow'
 import Composer from './components/Composer'
 import ThemeToggle from './components/ThemeToggle'
 import LangToggle from './components/LangToggle'
+import OnboardingWizard from './components/OnboardingWizard'
 import { makeT } from './i18n'
 import type { Lang } from './i18n'
 import {
@@ -100,6 +101,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
+  const [showEval, setShowEval] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const runIdRef = useRef<string | null>(null)
 
@@ -287,6 +289,11 @@ export default function App() {
 
   return (
     <div className="flex h-full bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      {showEval && (
+        <div className="fixed inset-0 z-50 bg-gray-50 dark:bg-gray-900">
+          <OnboardingWizard t={t} onClose={() => setShowEval(false)} />
+        </div>
+      )}
       <SessionSidebar
         sessions={sessions}
         currentId={sessionId}
@@ -303,6 +310,13 @@ export default function App() {
             <p className="truncate text-xs text-gray-500 dark:text-gray-400">{t('appCaption')}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setShowEval(true)}
+              className="flex h-8 items-center rounded-md px-2 text-sm font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              title={t('evalEntry')}
+            >
+              🧭 {t('evalEntry')}
+            </button>
             <LangToggle lang={lang} onChange={setLang} />
             <ThemeToggle theme={theme} onChange={setTheme} t={t} />
           </div>

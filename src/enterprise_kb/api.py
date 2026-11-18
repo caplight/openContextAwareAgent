@@ -23,8 +23,10 @@ from enterprise_kb import storage
 from enterprise_kb.agent import astream
 from enterprise_kb.context import compress_history
 from enterprise_kb.config import get_settings
+from enterprise_kb.eval_api import router as eval_router
 
 app = FastAPI(title="Kubernetes DevOps Assistant", version="0.1.0")
+app.include_router(eval_router)
 
 
 # ---------- 请求模型 ----------

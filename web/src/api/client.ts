@@ -143,3 +143,71 @@ export const deleteSession = (id: string) =>
 
 export const cancelChat = (runId: string) =>
   req<{ ok: boolean }>(`/api/chat/${runId}/cancel`, { method: 'POST' })
+
+// ---------- 评估闭环（引导 UX） ----------
+
+export interface SeedQuestion {
+  question: string
+  expected_answer: string
+  source_chunk_ids?: string[]
+}
+
+export interface EvaluationResult {
+  question: string
+  expected_answer: string | null
+  answer: string
+  contexts: string[]
+  faithfulness: number
+  context_precision: number
+}
+
+export type RatingValue = 'up' | 'down' | 'copied' | 'regenerated'
+
+export interface Rating {
+  question: string
+  rating: RatingValue
+}
+
+export interface Suggestion {
+  param: string
+  current: number
+  recommended: number
+  reason: string
+  confidence: number
+  category: 'strong' | 'weak'
+}
+
+/** 上传文档（multipart），返回文件名 + chunk 数。 */
+export const uploadDocument = async (
+  file: File,
+): Promise<{ filename: string; chunk_count: number }> => {
+  const form = new FormData()
+  form.append('file', file)
+  const resp = await fetch('/api/eval/upload', { method: 'POST', body: form })
+  if (!resp.ok) throw new Error(`upload failed: ${resp.status}`)
+  return resp.json()
+}
+
+export const seedQuestions = (n = 25) =>
+  req<{ questions: SeedQuestion[] }>('/api/eval/seed-questions', {
+    method: 'POST',
+    body: JSON.stringify({ n }),
+  })
+
+export const runEvaluation = (questions: SeedQuestion[]) =>
+  req<{ results: EvaluationResult[] }>('/api/eval/evaluate', {
+    method: 'POST',
+    body: JSON.stringify({ questions }),
+  })
+
+export const suggest = (questions: SeedQuestion[], ratings: Rating[]) =>
+  req<{ suggestion: Suggestion | null }>('/api/eval/suggest', {
+    method: 'POST',
+    body: JSON.stringify({ questions, ratings }),
+  })
+
+export const applySuggestion = (s: Suggestion) =>
+  req<{ top_k: number }>('/api/eval/apply', {
+    method: 'POST',
+    body: JSON.stringify(s),
+  })

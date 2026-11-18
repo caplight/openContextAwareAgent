@@ -210,6 +210,48 @@ def suggest_top_k(
 - `confidence` 复用 `rating.compute_confidence`（样本量 → 置信度）
 - **MVP 只做 top_k**（连续 → weak）；Greedy-M 的离散参数（模型/embedding）→ strong 建议，留待后续扩展
 
+### 4.5 `orchestrator.py` — 编排层（时序图 Orchestrator 角色）
+
+> ✅ **已实现**（2026-11-18，`src/enterprise_kb/orchestrator.py`，4 测试全绿）
+
+```python
+def suggest_top_k_workflow(
+    assistant_id: str,
+    questions: list[SeedQuestion],
+    ratings: list[Rating] | None = None,
+    candidates: tuple[int, ...] = (3, 5, 8, 10),
+) -> Suggestion | None:
+    """最小闭环的「建议」编排：跑多组 top_k 评估 → 收集 scores → suggest。"""
+
+def apply_suggestion(assistant_id: str, suggestion: Suggestion) -> ResolvedConfig:
+    """用户确认后写回 assistant_config（只覆盖建议涉及的参数）。"""
+```
+
+**实现要点（spec delta）**：
+- orchestrator 只做「散件之外的增量」：跑多组评估 + 写回；其余步骤（上传/种子问题/单轮评估/评分）直接调现有模块，不重复封装（薄封装无增量价值）
+- `suggest_top_k_workflow`：对每个候选 top_k 用 `model_copy(update={"top_k": k})` 跑评估 → 收集 `{top_k: avg_faithfulness}` → 调 `suggest_top_k`
+- `apply_suggestion`：只写建议涉及的参数（MVP 固定 top_k），其余字段回退全局，符合「人确认才写回」哲学
+
+### 4.6 `storage_eval.py` — 评估数据持久化
+
+> ✅ **已实现**（2026-11-18，`src/enterprise_kb/storage_eval.py`，9 测试全绿）
+
+```python
+def save_evaluation_run(assistant_id, config_snapshot, seed_questions, run_id=None) -> str
+def save_rating(run_id, question, rating, rating_id=None) -> str
+def get_evaluation_run(run_id) -> EvaluationRunRecord | None
+def get_ratings(run_id) -> list[RatingRecord]
+def get_latest_run(assistant_id) -> EvaluationRunRecord | None
+def delete_evaluation_run(run_id) -> bool
+```
+
+**实现要点（spec delta）**：
+- 独立 `eval.db`（不污染会话库 `ui.db`，也不混入 `assistant.db` 的配置）
+- `assistant_id` 是**逻辑关联**（跨 db 无外键）；`ratings.run_id` 是同 db 内 FK `ON DELETE CASCADE`
+- `config_snapshot` 用 json（dict 完整往返，含 `0.0` 边界值），供后续 diff
+- **rating 表不存 `confidence`**（§2.5 的字段）：它是 `compute_confidence` 针对一批运行时算的，不落库；单条 rating 只存 question + rating + created_at
+- golden_case 表后置（MVP 不做 golden case 回归）
+
 ---
 
 ## 5. 建议引擎实现要点
@@ -239,6 +281,14 @@ def suggest_top_k(
   → 产出建议
 ```
 
+**实现状态（2026-11-18）**：
+- 后端端点：`eval_api.py`（`POST /api/eval/{upload,seed-questions,evaluate,suggest,apply}`），已 `include_router` 到 `api.py`
+- 前端组件：`OnboardingWizard.tsx`（5 步向导：上传→种子问题→评分→建议→完成），入口按钮在 `App.tsx` header
+- API 客户端：`client.ts` 新增 `uploadDocument/seedQuestions/runEvaluation/suggest/applySuggestion` + 类型（`SeedQuestion/EvaluationResult/Rating/Suggestion`）
+- 置信度：前端复现 `1 - e^(-n/12)`（进度条 + 百分比）
+- i18n：`i18n.ts` 新增 `eval*` 文案（zh/en）
+- 测试：`test_eval_api.py`（9 用例）+ `OnboardingWizard.test.tsx`（8 用例）
+
 ### 6.2 版本 diff 可视化（golden case 回归）
 ```
 发新版 → 用旧 golden case 在新版上回归
@@ -255,11 +305,13 @@ def suggest_top_k(
 | 改动 | 文件 | 类型 |
 |---|---|---|
 | 全局 Settings → per-assistant config | `config.py` + 新增 `assistant.py` | 架构改动（第一步） |
-| 扩表存评估/golden/评分 | 新增 `storage_eval.py` 或扩 `storage.py` | 新增 |
+| 扩表存评估/golden/评分 | 新增 `storage_eval.py`（evaluation_run + rating 已实现，golden_case 后置） | 新增 |
 | 种子问题生成 | 新增 `seed_questions.py` | 新增 |
 | 跑评估（复用 ragas） | 抽 `eval/eval_ragas.py` 打分逻辑 → `evaluate.py` | 重构 |
 | listwise 评分 + 置信度 | 新增 `rating.py` | 新增 |
 | 可解释建议 | 新增 `suggest.py` | 新增（核心） |
+| 编排层（跑多组评估 + 写回） | 新增 `orchestrator.py` | 新增 |
+| 评估 REST 端点 | 新增 `eval_api.py`（`/api/eval/*`），挂载到 `api.py` | 新增 |
 | 引导 UX | `web/` 前端新增 onboarding + diff 界面 | 前端新增 |
 
 ---
