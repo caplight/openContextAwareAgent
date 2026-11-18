@@ -141,51 +141,74 @@ def generate_seed_questions(
 - 容错：越界 index、非 dict item、`items` 非列表、解析失败 → 跳过该条/该批，不崩溃
 
 ### 4.2 `evaluate.py` — 跑一轮评估
+
+> ✅ **已实现**（2026-11-18，`src/enterprise_kb/evaluate.py`，5 测试全绿）
+
 ```python
 def run_evaluation(
-    assistant_id: str,
-    questions: list[str],
-    config: dict,               # config_snapshot
+    questions: list[SeedQuestion],  # 修正自 list[str]：需 expected_answer 作 reference
+    config: ResolvedConfig | None = None,  # 修正自 dict：用 resolve 后的配置
+    judge_model: str = "deepseek-chat",
 ) -> EvaluationRun:
     """每个问题：retrieve + generate + RAGAS 打分。
     复用现有 retrieve_hybrid / generate_answer / ragas 打分。
-    产出 run_id + 每条问题的指标分数。
+    产出每类问题的指标分数 + config_snapshot。
     """
 ```
 
+**实现要点（spec delta）**：
+- 去除 `assistant_id` 参数：MVP 不持久化（返回内存 `EvaluationRun`），存储交后续 `storage_eval.py`
+- `config` 改为 `ResolvedConfig`（已 resolve 哨兵值），`config_snapshot = cfg.model_dump()` 供 diff
+- `EvaluationResult` 含 `faithfulness` + `context_precision`（分开报，不合成总分）
+- `EvaluationRun.avg_faithfulness` / `avg_context_precision` 属性求平均
+- judge LLM 抽自 `eval_ragas.py` 的 `_build_judge_llm`（deepseek-chat）
+
 ### 4.3 `rating.py` — listwise 评分
+
+> ✅ **已实现**（2026-11-18，`src/enterprise_kb/rating.py`，6 测试全绿）
+
 ```python
-def record_rating(
-    run_id: str,
-    question: str,
-    rating: Literal["up", "down", "copied", "regenerated"],
-) -> None:
-    """低摩擦评分。借鉴 Pistis-RAG：listwise 而非逐 chunk。"""
+class Rating(BaseModel):
+    question: str
+    rating: Literal["up", "down", "copied", "regenerated"]
+
+def positive_rate(ratings: list[Rating]) -> float:
+    """正面评分占比（up + copied 视为正面）。"""
 
 def compute_confidence(ratings: list[Rating]) -> float:
     """ARES PPI 思路：少量评分 → 置信区间，而非裸分。"""
 ```
 
-### 4.4 `suggest.py` — 可解释建议（核心壁垒）
-```python
-def suggest_tuning(
-    ratings: list[Rating],
-    current_config: dict,
-) -> list[Suggestion]:
-    """Greedy-M（模型优先）贪心，输出可解释建议。
+**实现要点（spec delta）**：
+- 去除 `record_rating`（持久化）→ 改为纯模型 + `positive_rate` + `compute_confidence`，持久化交后续 `storage_eval.py`
+- `compute_confidence`：sigmoid 型 `1 - exp(-n/12)`，n=0→0，n=25→~0.88，永远不到 1（诚实）
 
-    Suggestion = {
-        param: "top_k",           # 要调的参数
-        current: 5,
-        recommended: 8,
-        reason: "你的问题偏长、召回不全，试了几组后 top_k=8 的 faithful 率明显高（0.82 vs 0.71）",
-        confidence: 0.85,          # 置信度（基于样本量）
-        category: "strong" | "weak",  # 强建议（离散） / 弱建议（连续）
-    }
-    - 离散参数（模型/embedding/chunk 策略）→ strong，给明确理由
-    - 连续参数（top_k/chunk_size）→ weak，说清权衡让用户滑
+### 4.4 `suggest.py` — 可解释建议（核心壁垒）
+
+> ✅ **已实现**（2026-11-18，`src/enterprise_kb/suggest.py`，7 测试全绿）
+
+```python
+def suggest_top_k(
+    current: int,
+    scores: dict[int, float],       # {top_k: avg_faithfulness}
+    ratings: list[Rating] | None = None,
+) -> Suggestion | None:
+    """对比不同 top_k 的评估分数，输出可解释建议。
+
+    Suggestion = {param, current, recommended, reason, confidence, category}
+    - 当前值已是候选最优 → None
+    - 提升 < 5% 阈值 → None（避免噪音）
+    - category: 连续参数（top_k/chunk_size）→ weak，说清权衡让用户滑
     """
 ```
+
+**实现要点（spec delta）**：
+- 原 `suggest_tuning(ratings, current_config)` → 改为纯函数 `suggest_top_k(current, scores, ratings)`：
+  - **解耦**：不再内部跑评估（成本高、耦合），改为接收「评估分数 dict」作为输入，由调用方（编排层）跑评估后传入
+  - 这样核心逻辑（对比 + 可解释 + 置信度）成为好测试的纯函数
+- `_IMPROVEMENT_THRESHOLD = 0.05`：提升 < 5% 不建议，避免把评估噪音当「值得调」
+- `confidence` 复用 `rating.compute_confidence`（样本量 → 置信度）
+- **MVP 只做 top_k**（连续 → weak）；Greedy-M 的离散参数（模型/embedding）→ strong 建议，留待后续扩展
 
 ---
 
